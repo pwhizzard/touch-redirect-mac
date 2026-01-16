@@ -88,8 +88,9 @@ After building, the app will be ad-hoc signed (not notarized). macOS Gatekeeper 
 3. Select **Open** from the context menu
 4. You'll see a dialog saying "Apple could not verify..." — click **Done**
 5. Go to **System Settings → Privacy & Security**
-6. Scroll down to find **"TouchRedirect" was blocked** and click **Open Anyway**
-7. Click **Open** in the final confirmation dialog
+6. Scroll down to find **"TouchRedirect" was blocked** and click **Open Anyway**<img width="600" height="443" alt="Screenshot 2026-01-16 at 3 16 55 PM" src="https://github.com/user-attachments/assets/7d95973b-8076-429f-ad46-c0bb08c0fae3" />
+
+8. Click **Open** in the final confirmation dialog
 
 You only need to do this once per build. Subsequent launches will work normally.
 
