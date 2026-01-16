@@ -47,7 +47,8 @@ Since this app is not notarized with Apple, macOS will block it by default. To o
 2. Select **Open** from the context menu
 3. You'll see a dialog saying "Apple could not verify..." — click **Done** (not Move to Trash)
 4. Go to **System Settings → Privacy & Security**
-5. Scroll down to find **"TouchRedirect" was blocked** and click **Open Anyway**
+5. Scroll down to find **"TouchRedirect" was blocked** and click **Open Anyway**<img width="600" height="443" alt="Screenshot 2026-01-16 at 3 16 55 PM" src="https://github.com/user-attachments/assets/b38543e0-7729-4416-bf54-2ddee1413265" />
+
 6. Click **Open** in the final confirmation dialog
 
 You only need to do this once. After that, the app will open normally.
