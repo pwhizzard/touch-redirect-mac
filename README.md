@@ -13,8 +13,8 @@ A native macOS app that enables touch input to control your Mac's cursor via USB
 - ✅ **Gesture Recognition** - Tap, drag, right-click, scroll, pinch-zoom, Mission Control, App Exposé, desktop switching
 - ✅ **Menu Bar App** - Lightweight menu bar application
 - ✅ **Configurable** - Adjust sensitivity, gestures, and display mapping
-- ✅ **Multi-Display** - Support for multiple displays
-- ✅ **Calibration** - Built-in calibration tool for accurate mapping
+- ✅ **Multi-Display** - Support for multiple displays and touchscreen auto-detection
+- ✅ **Calibration** - Built-in calibration tool for 5 or 9 point accurate mapping
 
 ## Screenshots
 
