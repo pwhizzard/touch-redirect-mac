@@ -16,6 +16,26 @@ A native macOS app that enables touch input to control your Mac's cursor via USB
 - ✅ **Multi-Display** - Support for multiple displays
 - ✅ **Calibration** - Built-in calibration tool for accurate mapping
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/calibration-screen.png" width="700" alt="Calibration Screen">
+  <br>
+  <em>5-point calibration for accurate touch mapping</em>
+</p>
+
+### Settings
+
+| General | Gestures | Calibration |
+|:-------:|:--------:|:-----------:|
+| ![General](docs/images/settings-general.png) | ![Gestures](docs/images/settings-gestures.png) | ![Calibration](docs/images/settings-calibration.png) |
+
+<p align="center">
+  <img src="docs/images/recalibration-prompt.png" width="400" alt="Recalibration Prompt">
+  <br>
+  <em>Automatic prompt when display configuration changes</em>
+</p>
+
 ## Device Support
 
 Currently supported:
