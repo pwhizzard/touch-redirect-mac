@@ -26,9 +26,9 @@ A native macOS app that enables touch input to control your Mac's cursor via USB
 
 ### Settings
 
-| General | Gestures | Calibration |
+| General | Calibration | Gestures |
 |:-------:|:--------:|:-----------:|
-| ![General](docs/images/settings-general.png) | ![Gestures](docs/images/settings-gestures.png) | ![Calibration](docs/images/settings-calibration.png) |
+| ![General](docs/images/settings-general.png) | ![Calibration](docs/images/settings-calibration.png) | ![Gestures](docs/images/settings-gestures.png) |
 
 <p align="center">
   <img src="docs/images/recalibration-prompt.png" width="400" alt="Recalibration Prompt">
