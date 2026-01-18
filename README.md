@@ -38,7 +38,7 @@ A native macOS app that enables touch input to control your Mac's cursor via USB
 
 ## Device Support
 
-Currently supported:
+### Supported Touchscreens
 
 - **Cisco WebEx Desk Pro** (VendorID: 0x05a6, ProductID: 0x0b05)
 
@@ -46,6 +46,15 @@ Currently supported:
 > Different devices have different HID report formats, so support must be added
 > per-device. See [BUILD.md](BUILD.md#adding-support-for-other-touchscreens) for
 > instructions on adding support for other USB touchscreens.
+
+### Confirmed Working Macs
+
+| Mac Model | Chip | Status |
+|-----------|------|--------|
+| Mac Mini (2024) | Apple M4 | ✅ Confirmed |
+| MacBook Pro (2021) | Apple M1 | ✅ Confirmed |
+
+TouchRedirect should work on any Apple Silicon Mac running macOS 14.0+.
 
 ## Requirements
 
@@ -80,10 +89,12 @@ If you prefer to build from source, see [BUILD.md](BUILD.md).
 The app requires the following permissions:
 
 - **Accessibility** - To inject mouse events and control the cursor
-- **Input Monitoring** - To access HID devices
+- **Input Monitoring** - To access HID devices (USB touch interface)
 
 You'll be prompted to grant these permissions on first launch. Go to:
-**System Settings → Privacy & Security → Accessibility**
+**System Settings → Privacy & Security → Accessibility** and **Input Monitoring**
+
+⚠️ **Important**: If you don't see the Accessibility prompt, you may need to manually add TouchRedirect to both Accessibility and Input Monitoring in System Settings.
 
 ## Usage
 
@@ -139,10 +150,71 @@ To reset calibration, use the **Reset Calibration** button in settings.
 
 ### Device Not Detected
 
+**⚠️ If TouchRedirect shows "Disconnected"**, the most common cause is a conflicting driver extension.
+
+**Most Common Cause: UPPD Driver Extension**
+
+If you previously installed UPPD (Touch-Base) software, its driver extension blocks TouchRedirect from accessing the Desk Pro. **This is the #1 cause of connection issues.**
+
+**Quick Fix:**
+1. Open **System Settings** → **General** → **Login Items & Extensions**
+2. Click **Driver Extensions**
+3. Find **"com.touch-base.updd-system-extension-dext"**
+4. **Toggle it OFF**
+5. **Restart your Mac**
+
+**To verify this is the issue**, run:
+```bash
+systemextensionsctl list | grep updd
+```
+
+If you see `com.touch-base.updd-system-extension-dext [activated enabled]`, that's the problem.
+
+**Other Possible Causes:**
+
+1. **USB-C Port/Cable Issues**:
+   - Try different USB-C ports on your Mac
+   - Ensure you're using a data-capable USB-C cable (not charge-only)
+
+2. **Conflicting Processes**:
+   - WebexHelper may hold exclusive device access
+   - Run: `killall WebexHelper`
+   - Then reconnect the device
+
+3. **Permissions Not Granted**:
+   - Check Accessibility and Input Monitoring in System Settings
+
+**For comprehensive troubleshooting**, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**
+
+### App-Level Issues
+
+If the on-screen touch button IS visible but TouchRedirect shows "Disconnected":
+
 - Ensure WebEx Desk Pro is connected via USB-C
 - Check System Information → USB to verify device appears
 - Try disconnecting and reconnecting the USB-C cable
 - Quit and restart WebexHelper if it's running: `killall WebexHelper`
+
+### Quick Diagnostic Commands
+
+```bash
+# Check if Desk Pro HID device is detected
+ioreg -p IOUSB -w 0 | grep -i "desk"
+
+# Check for UPPD driver blocking the device
+systemextensionsctl list | grep updd
+
+# Check what's attached to the HID device (look for third-party drivers)
+ioreg -p IOService -w 0 -l | grep -A 20 "Desk Pro HID" | grep -i "bundle"
+
+# Kill conflicting processes
+killall WebexHelper
+
+# View TouchRedirect logs  
+tail -f /tmp/touchredirect.log
+```
+
+For comprehensive diagnostics, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
 
 ### Touch Not Working
 

@@ -76,6 +76,25 @@ For local development, automatic signing is sufficient:
 1. In Xcode, open **Signing & Capabilities**
 2. Enable **Automatically manage signing**
 3. Select your Personal Team
+4. **IMPORTANT**: Make sure entitlements are configured
+
+### Entitlements
+
+The app requires specific entitlements to access USB HID devices. The entitlements file is located at:
+`TouchRedirect/TouchRedirect.entitlements`
+
+Required entitlements:
+- `com.apple.security.device.usb` = `true` - Required for USB HID device access
+- `com.apple.security.app-sandbox` = `false` - Must be disabled (sandboxed apps cannot access raw HID)
+- `com.apple.security.cs.allow-unsigned-executable-memory` = `true` - For dynamic code execution
+- `com.apple.security.automation.apple-events` = `true` - For automation features
+
+**Verify entitlements after building:**
+```bash
+codesign -d --entitlements - /path/to/TouchRedirect.app
+```
+
+If entitlements are missing, you may need to manually specify the entitlements file in Xcode build settings.
 
 ## Running the Built App
 

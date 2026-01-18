@@ -24,6 +24,7 @@
 import SwiftUI
 import AppKit
 import ApplicationServices
+import IOKit.hid
 
 // MARK: - Settings Window Host
 
@@ -79,11 +80,17 @@ struct SettingsView: View {
                 }
                 .tag(2)
             
+            DiagnosticsSettingsView()
+                .tabItem {
+                    Label("Diagnostics", systemImage: "stethoscope")
+                }
+                .tag(3)
+            
             AboutSettingsView()
                 .tabItem {
                     Label("About", systemImage: "info.circle.fill")
                 }
-                .tag(3)
+                .tag(4)
         }
         .padding(20)
         .frame(minWidth: 450, minHeight: 420)
@@ -399,6 +406,309 @@ struct GestureRow: View {
                 .foregroundColor(.secondary)
         }
         .font(.caption)
+    }
+}
+
+// MARK: - Diagnostics Tab
+
+struct DiagnosticsSettingsView: View {
+    @State private var diagnosticReport = ""
+    @State private var isRunningDiagnostics = false
+    @State private var systemInfo = getSystemInfo()
+    @State private var hasAccessibility = AXIsProcessTrusted()
+    @State private var hasInputMonitoring = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("System Diagnostics")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Troubleshoot device connection issues")
+                        .foregroundColor(.secondary)
+                }
+                
+                Divider()
+                
+                // System Info
+                GroupBox(label: Label("System Information", systemImage: "desktopcomputer")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        InfoRow(label: "Mac Model", value: systemInfo.model)
+                        InfoRow(label: "Chip", value: systemInfo.chip)
+                        InfoRow(label: "Architecture", value: systemInfo.architecture)
+                        InfoRow(label: "macOS", value: systemInfo.osVersion)
+                    }
+                    .padding(8)
+                }
+                
+                // Permission Status
+                GroupBox(label: Label("Permissions", systemImage: "lock.shield")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PermissionRow(
+                            label: "Accessibility",
+                            granted: hasAccessibility,
+                            description: "Required to control cursor"
+                        )
+                        
+                        PermissionRow(
+                            label: "Input Monitoring",
+                            granted: hasInputMonitoring,
+                            description: "Required to access USB HID devices"
+                        )
+                        
+                        if !hasAccessibility || !hasInputMonitoring {
+                            Divider()
+                                .padding(.vertical, 4)
+                            
+                            Button(action: openSystemSettings) {
+                                Label("Open System Settings", systemImage: "gearshape")
+                            }
+                            .buttonStyle(.link)
+                        }
+                    }
+                    .padding(8)
+                }
+                
+                // Quick Diagnostics
+                GroupBox(label: Label("Quick Actions", systemImage: "wrench.and.screwdriver")) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button(action: checkPermissions) {
+                            Label("Refresh Permission Status", systemImage: "arrow.clockwise")
+                        }
+                        
+                        Button(action: openConsoleApp) {
+                            Label("Open Console.app (View Logs)", systemImage: "terminal")
+                        }
+                        
+                        Button(action: openSystemInformation) {
+                            Label("Open System Information (USB)", systemImage: "info.circle")
+                        }
+                        
+                        Button(action: openTroubleshootingGuide) {
+                            Label("View Troubleshooting Guide", systemImage: "doc.text")
+                        }
+                    }
+                    .padding(8)
+                }
+                
+                // Full Diagnostics
+                GroupBox(label: Label("Full Diagnostic Report", systemImage: "stethoscope")) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Run comprehensive diagnostics to identify connection issues.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        HStack {
+                            Button(action: runFullDiagnostics) {
+                                if isRunningDiagnostics {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                    Text("Running...")
+                                } else {
+                                    Label("Run Full Diagnostics", systemImage: "play.fill")
+                                }
+                            }
+                            .disabled(isRunningDiagnostics)
+                            
+                            if !diagnosticReport.isEmpty {
+                                Button(action: openDiagnosticLog) {
+                                    Label("Open Log File", systemImage: "doc.text")
+                                }
+                                
+                                Button(action: copyDiagnosticReport) {
+                                    Label("Copy Report", systemImage: "doc.on.clipboard")
+                                }
+                            }
+                        }
+                        
+                        if !diagnosticReport.isEmpty {
+                            Divider()
+                                .padding(.vertical, 4)
+                            
+                            ScrollView {
+                                Text(diagnosticReport)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(height: 200)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+            .padding()
+        }
+        .onAppear {
+            checkPermissions()
+        }
+    }
+    
+    private func checkPermissions() {
+        hasAccessibility = AXIsProcessTrusted()
+        hasInputMonitoring = checkInputMonitoringPermission()
+    }
+    
+    private func checkInputMonitoringPermission() -> Bool {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        guard let hidManager = manager else {
+            return false
+        }
+        
+        let openResult = IOHIDManagerOpen(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
+        let hasAccess = (openResult == kIOReturnSuccess)
+        
+        if hasAccess {
+            IOHIDManagerClose(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        
+        return hasAccess
+    }
+    
+    private func runFullDiagnostics() {
+        isRunningDiagnostics = true
+        diagnosticReport = ""
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let report = USBDiagnostics.generateReport()
+            
+            DispatchQueue.main.async {
+                diagnosticReport = report
+                isRunningDiagnostics = false
+            }
+        }
+    }
+    
+    private func openDiagnosticLog() {
+        let logPath = "/tmp/touchredirect-diagnostics.log"
+        NSWorkspace.shared.open(URL(fileURLWithPath: logPath))
+    }
+    
+    private func copyDiagnosticReport() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(diagnosticReport, forType: .string)
+    }
+    
+    private func openSystemSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    private func openConsoleApp() {
+        NSWorkspace.shared.launchApplication("Console")
+    }
+    
+    private func openSystemInformation() {
+        NSWorkspace.shared.launchApplication("System Information")
+    }
+    
+    private func openTroubleshootingGuide() {
+        // Try to open TROUBLESHOOTING.md in workspace
+        if let bundlePath = Bundle.main.resourcePath,
+           let troubleshootingPath = Bundle.main.path(forResource: "TROUBLESHOOTING", ofType: "md") {
+            NSWorkspace.shared.open(URL(fileURLWithPath: troubleshootingPath))
+        } else {
+            // Fallback to GitHub
+            if let url = URL(string: "https://github.com/pwhizzard/touch-redirect-mac/blob/main/TROUBLESHOOTING.md") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    private static func getSystemInfo() -> (model: String, chip: String, architecture: String, osVersion: String) {
+        var model = "Unknown"
+        var chip = "Unknown"
+        
+        if let modelData = runCommand("/usr/sbin/sysctl", ["-n", "hw.model"]) {
+            model = modelData.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        if let cpuBrand = runCommand("/usr/sbin/sysctl", ["-n", "machdep.cpu.brand_string"]) {
+            chip = cpuBrand.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        let architecture: String
+        #if arch(arm64)
+        architecture = "Apple Silicon (arm64)"
+        #elseif arch(x86_64)
+        architecture = "Intel (x86_64)"
+        #else
+        architecture = "Unknown"
+        #endif
+        
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        
+        return (model, chip, architecture, osVersion)
+    }
+    
+    private static func runCommand(_ command: String, _ arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: command)
+        process.arguments = arguments
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
+        }
+    }
+}
+
+struct InfoRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label + ":")
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .leading)
+            Text(value)
+            Spacer()
+        }
+        .font(.caption)
+    }
+}
+
+struct PermissionRow: View {
+    let label: String
+    let granted: Bool
+    let description: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(granted ? .green : .red)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                Text(description)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Text(granted ? "Granted" : "Missing")
+                .font(.caption)
+                .foregroundColor(granted ? .green : .red)
+        }
     }
 }
 

@@ -56,7 +56,8 @@ class HIDManager {
         // Create HID Manager
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         
-        log("Looking for device: VendorID=0x\(String(kVendorID, radix: 16)), ProductID=0x\(String(kProductID, radix: 16)), UsagePage=0x\(String(kUsagePage, radix: 16))")
+        logError("═══ HID Manager Setup ═══")
+        logError("Looking for device: VendorID=0x\(String(kVendorID, radix: 16)), ProductID=0x\(String(kProductID, radix: 16)), UsagePage=0x\(String(kUsagePage, radix: 16))")
         
         // Set device matching criteria - try matching without usage page first
         // Some devices have multiple interfaces, and we want the touch one
@@ -65,7 +66,7 @@ class HIDManager {
             kIOHIDProductIDKey as String: kProductID
         ]
         IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
-        log("Device matching criteria set")
+        logError("Device matching criteria set (VendorID & ProductID only)")
         
         // Register callbacks using the proper pattern with retained self
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -88,10 +89,25 @@ class HIDManager {
         // Open manager
         let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         if result != kIOReturnSuccess {
-            logError("Failed to open HID Manager: \(result)")
+            logError("❌ Failed to open HID Manager: IOReturn=\(result) (\(ioReturnDescription(result)))")
+            logError("   This usually means Input Monitoring permission is missing.")
+            logError("   Go to: System Settings → Privacy & Security → Input Monitoring")
         } else {
-            log("HID Manager opened successfully, waiting for device...")
+            logError("✓ HID Manager opened successfully")
+            
+            // Enumerate already-connected devices
+            if let deviceSet = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> {
+                logError("Found \(deviceSet.count) already-connected HID device(s)")
+                for device in deviceSet {
+                    let vid = IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? Int ?? 0
+                    let pid = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? Int ?? 0
+                    log("  - VID=0x\(String(vid, radix: 16)) PID=0x\(String(pid, radix: 16))")
+                }
+            } else {
+                logError("No HID devices found at startup (waiting for connection...)")
+            }
         }
+        logError("═══════════════════════════")
     }
     
     private func deviceConnected(_ device: IOHIDDevice) {
@@ -99,28 +115,40 @@ class HIDManager {
         let vendorID = IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? Int ?? 0
         let productID = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? Int ?? 0
         let product = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? "Unknown"
+        let manufacturer = IOHIDDeviceGetProperty(device, kIOHIDManufacturerKey as CFString) as? String ?? "Unknown"
         let usagePage = IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? Int ?? 0
         let usage = IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsageKey as CFString) as? Int ?? 0
+        let locationID = IOHIDDeviceGetProperty(device, kIOHIDLocationIDKey as CFString) as? Int ?? 0
         
-        log("Device connected: \(product)")
-        log("  VendorID: 0x\(String(vendorID, radix: 16)), ProductID: 0x\(String(productID, radix: 16))")
-        log("  UsagePage: 0x\(String(usagePage, radix: 16)), Usage: 0x\(String(usage, radix: 16))")
+        logError("═══ Device Connected ═══")
+        logError("Product:      \(product)")
+        logError("Manufacturer: \(manufacturer)")
+        logError("VendorID:     0x\(String(vendorID, radix: 16))")
+        logError("ProductID:    0x\(String(productID, radix: 16))")
+        logError("UsagePage:    0x\(String(usagePage, radix: 16)) (\(usagePageName(usagePage)))")
+        logError("Usage:        0x\(String(usage, radix: 16)) (\(usageName(usage)))")
+        logError("LocationID:   0x\(String(locationID, radix: 16))")
         
         // Only use touch screen interface (UsagePage 0x0D, Usage 0x04)
         if usagePage == kUsagePage && usage == kUsage {
-            log("✓ This is the touch screen interface")
+            logError("✓ This IS the touch screen interface!")
             
             // Try to open the device explicitly
             let openResult = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
             if openResult == kIOReturnSuccess {
-                log("  Device opened successfully (seized)")
+                logError("✓ Device opened successfully (exclusive/seized)")
             } else {
-                log("  Failed to seize device (\(openResult)), trying normal open...")
+                logError("⚠️  Failed to seize device: IOReturn=\(openResult) (\(ioReturnDescription(openResult)))")
+                logError("   Trying normal (shared) open...")
                 let normalOpen = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
                 if normalOpen == kIOReturnSuccess {
-                    log("  Device opened successfully (normal)")
+                    logError("✓ Device opened successfully (shared access)")
                 } else {
-                    log("  ⚠️ Failed to open device: \(normalOpen)")
+                    logError("❌ Failed to open device: IOReturn=\(normalOpen) (\(ioReturnDescription(normalOpen)))")
+                    logError("   Device may be in use by another process (WebexHelper, UPPD)")
+                    logError("   Try: killall WebexHelper")
+                    logError("═══════════════════════════")
+                    return
                 }
             }
             
@@ -128,8 +156,13 @@ class HIDManager {
             appDelegate?.updateStatus(connected: true)
             registerInputReportCallback(device)
             ScreenManager.shared.refreshTargetScreen(reason: "touch device connected")
+            logError("═══════════════════════════")
         } else {
-            log("  (Skipping - not the touch interface)")
+            logError("⚠️  NOT the touch interface (wrong UsagePage/Usage)")
+            logError("   Expected: UsagePage=0x0D (Digitizer), Usage=0x04 (Touch Screen)")
+            logError("   Got:      UsagePage=0x\(String(usagePage, radix: 16)), Usage=0x\(String(usage, radix: 16))")
+            logError("   Skipping this interface...")
+            logError("═══════════════════════════")
         }
     }
     
@@ -186,6 +219,155 @@ class HIDManager {
     deinit {
         if manager != nil {
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func ioReturnDescription(_ code: IOReturn) -> String {
+        switch code {
+        case kIOReturnSuccess:
+            return "Success"
+        case kIOReturnError:
+            return "General Error"
+        case kIOReturnNoMemory:
+            return "No Memory"
+        case kIOReturnNoResources:
+            return "No Resources"
+        case kIOReturnIPCError:
+            return "IPC Error"
+        case kIOReturnNoDevice:
+            return "No Device"
+        case kIOReturnNotPrivileged:
+            return "Not Privileged (Permission Denied)"
+        case kIOReturnBadArgument:
+            return "Bad Argument"
+        case kIOReturnLockedRead:
+            return "Locked Read"
+        case kIOReturnLockedWrite:
+            return "Locked Write"
+        case kIOReturnExclusiveAccess:
+            return "Exclusive Access (Device in use by another process)"
+        case kIOReturnBadMessageID:
+            return "Bad Message ID"
+        case kIOReturnUnsupported:
+            return "Unsupported"
+        case kIOReturnVMError:
+            return "VM Error"
+        case kIOReturnInternalError:
+            return "Internal Error"
+        case kIOReturnIOError:
+            return "IO Error"
+        case kIOReturnCannotLock:
+            return "Cannot Lock"
+        case kIOReturnNotOpen:
+            return "Not Open"
+        case kIOReturnNotReadable:
+            return "Not Readable"
+        case kIOReturnNotWritable:
+            return "Not Writable"
+        case kIOReturnNotAligned:
+            return "Not Aligned"
+        case kIOReturnBadMedia:
+            return "Bad Media"
+        case kIOReturnStillOpen:
+            return "Still Open"
+        case kIOReturnRLDError:
+            return "RLD Error"
+        case kIOReturnDMAError:
+            return "DMA Error"
+        case kIOReturnBusy:
+            return "Busy"
+        case kIOReturnTimeout:
+            return "Timeout"
+        case kIOReturnOffline:
+            return "Offline"
+        case kIOReturnNotReady:
+            return "Not Ready"
+        case kIOReturnNotAttached:
+            return "Not Attached"
+        case kIOReturnNoChannels:
+            return "No Channels"
+        case kIOReturnNoSpace:
+            return "No Space"
+        case kIOReturnPortExists:
+            return "Port Exists"
+        case kIOReturnCannotWire:
+            return "Cannot Wire"
+        case kIOReturnNoInterrupt:
+            return "No Interrupt"
+        case kIOReturnNoFrames:
+            return "No Frames"
+        case kIOReturnMessageTooLarge:
+            return "Message Too Large"
+        case kIOReturnNotPermitted:
+            return "Not Permitted"
+        case kIOReturnNoPower:
+            return "No Power"
+        case kIOReturnNoMedia:
+            return "No Media"
+        case kIOReturnUnformattedMedia:
+            return "Unformatted Media"
+        case kIOReturnUnsupportedMode:
+            return "Unsupported Mode"
+        case kIOReturnUnderrun:
+            return "Underrun"
+        case kIOReturnOverrun:
+            return "Overrun"
+        case kIOReturnDeviceError:
+            return "Device Error"
+        case kIOReturnNoCompletion:
+            return "No Completion"
+        case kIOReturnAborted:
+            return "Aborted"
+        case kIOReturnNoBandwidth:
+            return "No Bandwidth"
+        case kIOReturnNotResponding:
+            return "Not Responding"
+        case kIOReturnIsoTooOld:
+            return "Iso Too Old"
+        case kIOReturnIsoTooNew:
+            return "Iso Too New"
+        case kIOReturnNotFound:
+            return "Not Found"
+        default:
+            return "Unknown Error Code: \(code)"
+        }
+    }
+    
+    private func usagePageName(_ usagePage: Int) -> String {
+        switch usagePage {
+        case 0x01:
+            return "Generic Desktop"
+        case 0x0D:
+            return "Digitizer"
+        case 0x0C:
+            return "Consumer"
+        case 0x09:
+            return "Button"
+        case 0x07:
+            return "Keyboard"
+        case 0x08:
+            return "LED"
+        default:
+            return "Unknown"
+        }
+    }
+    
+    private func usageName(_ usage: Int) -> String {
+        switch usage {
+        case 0x01:
+            return "Pointer"
+        case 0x02:
+            return "Mouse"
+        case 0x04:
+            return "Touch Screen"
+        case 0x05:
+            return "Touch Pad"
+        case 0x06:
+            return "Keyboard"
+        default:
+            return "Unknown"
         }
     }
 }

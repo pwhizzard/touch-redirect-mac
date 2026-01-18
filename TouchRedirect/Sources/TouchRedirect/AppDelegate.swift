@@ -22,6 +22,7 @@
 //
 
 import Cocoa
+import IOKit.hid
 
 // MARK: - Logging
 
@@ -94,6 +95,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var hasAccessibilityPermission: Bool = false
     var accessibilityCheckTimer: Timer?
     
+    // Input Monitoring permission state
+    var hasInputMonitoringPermission: Bool = false
+    var inputMonitoringCheckTimer: Timer?
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Clear old log first
         try? FileManager.default.removeItem(atPath: "/tmp/touchredirect.log")
@@ -136,6 +141,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Check permission state before menu setup (without prompting)
         hasAccessibilityPermission = AXIsProcessTrusted()
+        hasInputMonitoringPermission = checkInputMonitoringPermission()
         
         setupMenuBar()
         setupHIDManager()
@@ -149,6 +155,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             // Only check permissions after onboarding is complete
             checkAccessibilityPermissions()
+            checkInputMonitoringPermissions()
         }
         
         // Listen for calibration requests from Settings UI
@@ -215,9 +222,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hasAccessibilityPermission = trusted
         
         if !trusted {
-            log("⚠️  Accessibility permission required for cursor control")
-            log("   Go to: System Settings → Privacy & Security → Accessibility")
-            log("   Add and enable TouchRedirect")
+            logError("⚠️  Accessibility permission required for cursor control")
+            logError("   Go to: System Settings → Privacy & Security → Accessibility")
+            logError("   Add and enable TouchRedirect")
             
             // Start periodic check if not already running
             if accessibilityCheckTimer == nil {
@@ -235,6 +242,86 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Update UI to reflect granted state
             if !wasGranted {
                 updateStatusBarMenu()
+            }
+        }
+    }
+    
+    private func checkInputMonitoringPermission() -> Bool {
+        // Check IOHIDManager access (requires Input Monitoring on macOS 10.15+)
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        guard let hidManager = manager else {
+            return false
+        }
+        
+        let openResult = IOHIDManagerOpen(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
+        let hasAccess = (openResult == kIOReturnSuccess)
+        
+        if hasAccess {
+            IOHIDManagerClose(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        
+        return hasAccess
+    }
+    
+    private func checkInputMonitoringPermissions(prompt: Bool = true) {
+        let hasAccess = checkInputMonitoringPermission()
+        
+        let wasGranted = hasInputMonitoringPermission
+        hasInputMonitoringPermission = hasAccess
+        
+        if !hasAccess {
+            logError("⚠️  Input Monitoring permission required for HID device access")
+            logError("   Go to: System Settings → Privacy & Security → Input Monitoring")
+            logError("   Add and enable TouchRedirect")
+            logError("   You may need to restart the app after granting permission")
+            
+            // Show alert if not already shown
+            if prompt && !wasGranted {
+                DispatchQueue.main.async { [weak self] in
+                    self?.showInputMonitoringAlert()
+                }
+            }
+            
+            // Start periodic check if not already running
+            if inputMonitoringCheckTimer == nil {
+                inputMonitoringCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                    self?.checkInputMonitoringPermissions(prompt: false)
+                }
+            }
+        } else {
+            log("✓ Input Monitoring permission granted")
+            
+            // Stop periodic check once granted
+            inputMonitoringCheckTimer?.invalidate()
+            inputMonitoringCheckTimer = nil
+            
+            // Update UI to reflect granted state
+            if !wasGranted {
+                updateStatusBarMenu()
+            }
+        }
+    }
+    
+    private func showInputMonitoringAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Input Monitoring Permission Required"
+        alert.informativeText = """
+        TouchRedirect needs Input Monitoring permission to access USB HID devices (the WebEx Desk Pro touch interface).
+        
+        Please grant permission in:
+        System Settings → Privacy & Security → Input Monitoring
+        
+        You may need to restart TouchRedirect after granting permission.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Later")
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            // Open System Settings to Privacy & Security
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+                NSWorkspace.shared.open(url)
             }
         }
     }
