@@ -76,25 +76,26 @@ For local development, automatic signing is sufficient:
 1. In Xcode, open **Signing & Capabilities**
 2. Enable **Automatically manage signing**
 3. Select your Personal Team
-4. **IMPORTANT**: Make sure entitlements are configured
+4. **Optional**: Only configure entitlements if you are sandboxing or notarizing
 
-### Entitlements
+### Entitlements (Only for sandboxed or notarized builds)
 
-The app requires specific entitlements to access USB HID devices. The entitlements file is located at:
+For local development builds, entitlements are not required because the app is
+not sandboxed and runs with standard user permissions.
+
+If you are **sandboxing or notarizing** the app, use the entitlements file at:
 `TouchRedirect/TouchRedirect.entitlements`
 
-Required entitlements:
-- `com.apple.security.device.usb` = `true` - Required for USB HID device access
-- `com.apple.security.app-sandbox` = `false` - Must be disabled (sandboxed apps cannot access raw HID)
-- `com.apple.security.cs.allow-unsigned-executable-memory` = `true` - For dynamic code execution
-- `com.apple.security.automation.apple-events` = `true` - For automation features
+Relevant entitlements for those builds:
+- `com.apple.security.device.usb` = `true` - Required when sandboxed for USB HID access
+- `com.apple.security.app-sandbox` = `false` - Raw HID access does not work in the sandbox
+- `com.apple.security.cs.allow-unsigned-executable-memory` = `true` - For dynamic code execution (if used)
+- `com.apple.security.automation.apple-events` = `true` - For automation features (if used)
 
-**Verify entitlements after building:**
+**Verify entitlements after building (sandboxed/notarized builds only):**
 ```bash
 codesign -d --entitlements - /path/to/TouchRedirect.app
 ```
-
-If entitlements are missing, you may need to manually specify the entitlements file in Xcode build settings.
 
 ## Running the Built App
 
@@ -121,11 +122,3 @@ You only need to do this once per build. Subsequent launches will work normally.
   ```
 - **Permission issues**: Make sure Accessibility and Input Monitoring are granted.
 
-## Legacy Xcode Project (Optional)
-
-There is also an older Xcode project under `TouchRedirectMac/`. It is not
-the primary build path, but it can be opened if needed:
-
-```bash
-open TouchRedirectMac/TouchRedirectMac.xcodeproj
-```
