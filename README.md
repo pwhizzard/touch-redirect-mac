@@ -4,7 +4,7 @@
 ![macOS](https://img.shields.io/badge/macOS-14%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)
 
-A native macOS app that enables touch input to control your Mac's cursor via USB-C alone. I built it for the Cisco WebEx Desk Pro but designed it so support for other USB HID touchscreen devices could be added.
+A native macOS app that enables touch input to control your Mac's via USB-C alone. I built it for the Cisco WebEx Desk Pro but designed it so support for other USB HID touchscreen devices could be added.
 
 ## Features
 
@@ -152,9 +152,9 @@ To reset calibration, use the **Reset Calibration** button in settings.
 
 **⚠️ If TouchRedirect shows "Disconnected"**, the most common cause is a conflicting driver extension.
 
-**Most Common Cause: UPPD Driver Extension**
+**Example Cause: UPPD Driver Extension**
 
-If you previously installed UPPD (Touch-Base) software, its driver extension blocks TouchRedirect from accessing the Desk Pro. **This is the #1 cause of connection issues.**
+If you previously installed UPPD (Touch-Base) software or another touch conflicting driver, its driver extension can block TouchRedirect from accessing the Desk Pro.
 
 **Quick Fix:**
 1. Open **System Settings** → **General** → **Login Items & Extensions**
