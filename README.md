@@ -4,17 +4,17 @@
 ![macOS](https://img.shields.io/badge/macOS-14%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)
 
-A native macOS app that enables touch input to control your Mac's via USB-C alone. I built it for the Cisco WebEx Desk Pro but designed it so support for other USB HID touchscreen devices could be added.
+A native macOS app that enables touch input to control your Mac via USB-C alone. I built it for the Cisco WebEx Desk Pro but designed it so support for other USB HID touchscreen devices could be added.
 
 ## Features
 
-- ✅ **USB-C Only** - Works with just USB-C connection, no HDMI required
 - ✅ **Multi-Touch Support** - Supports up to 10 simultaneous touch points
 - ✅ **Gesture Recognition** - Tap, drag, right-click, scroll, pinch-zoom, Mission Control, App Exposé, desktop switching
 - ✅ **Menu Bar App** - Lightweight menu bar application
 - ✅ **Configurable** - Adjust sensitivity, gestures, and display mapping
 - ✅ **Multi-Display** - Support for multiple displays and touchscreen auto-detection
 - ✅ **Calibration** - Built-in calibration tool for 5 or 9-point accurate mapping
+- ✅ **USB-C Only** - Works with just USB-C connection, no HDMI required
 
 ## Screenshots
 
@@ -150,7 +150,7 @@ To reset calibration, use the **Reset Calibration** button in settings.
 
 ### Device Not Detected
 
-**⚠️ If TouchRedirect shows "Disconnected"**, the most common cause is a conflicting driver extension.
+**⚠️ If TouchRedirect shows "Disconnected"**, a common cause is a conflicting driver extension.
 
 **Example Cause: UPPD Driver Extension**
 
@@ -168,7 +168,7 @@ If you previously installed UPPD (Touch-Base) software or another touch conflict
 systemextensionsctl list | grep updd
 ```
 
-If you see `com.touch-base.updd-system-extension-dext [activated enabled]`, that's the problem.
+If you see `com.touch-base.updd-system-extension-dext [activated enabled]`, that's likely the problem.
 
 **Other Possible Causes:**
 
