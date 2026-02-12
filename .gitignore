@@ -1,0 +1,52 @@
+# Xcode
+.DS_Store
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Build artifacts
+DerivedData/
+build/
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+*.sublime-*
+
+# Archives
+*.zip
+*.tar.gz
+*.dmg
+
+# Secrets (should never be committed)
+*.p12
+*.mobileprovision
+*.provisionprofile
+Secrets/
