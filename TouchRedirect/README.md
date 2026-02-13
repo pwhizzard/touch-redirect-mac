@@ -11,6 +11,26 @@ swift build -c release
 bash Scripts/build-app.sh
 ```
 
+## Local Deploy Workflow
+
+```bash
+# Build release binary
+swift build -c release
+
+# Stop app if running
+killall TouchRedirect
+
+# Copy into /Applications bundle
+cp .build/release/TouchRedirect /Applications/TouchRedirect.app/Contents/MacOS/TouchRedirect
+cp Sources/TouchRedirect/Info.plist /Applications/TouchRedirect.app/Contents/Info.plist
+
+# Re-sign and relaunch
+codesign --force --deep --sign - /Applications/TouchRedirect.app
+open /Applications/TouchRedirect.app
+```
+
+If re-signing changes code identity, macOS may ask for Accessibility/Input Monitoring permissions again.
+
 ## Project Structure
 
 ```

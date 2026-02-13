@@ -204,7 +204,9 @@ class Mapper {
         let key = deviceIdentity.persistenceKey
         edgeBoostStrength = CGFloat(Config.shared.edgeBoostStrength(forDevice: key))
 
-        if let transform = Config.shared.affineTransform(forDevice: key) {
+        // Only load calibration that was saved specifically for THIS device.
+        // Never fall back to global calibration (which may belong to a different device).
+        if let transform = Config.shared.perDeviceAffineTransform(forDevice: key) {
             loadTransformValues(transform)
         }
 
@@ -251,6 +253,19 @@ class Mapper {
     /// The effective screen frame for this mapper (per-device resolved or global fallback)
     var targetFrame: CGRect {
         return resolvedDisplayFrame ?? screenManager.screenFrame
+    }
+
+    /// Returns true if a CGEvent-space point is inside this mapper's target display.
+    func isPointOnTargetDisplay(_ point: CGPoint) -> Bool {
+        let frame = targetFrame
+        let primaryHeight = CGFloat(CGDisplayBounds(CGMainDisplayID()).height)
+        let frameInCGEventSpace = CGRect(
+            x: frame.origin.x,
+            y: primaryHeight - (frame.origin.y + frame.height),
+            width: frame.width,
+            height: frame.height
+        )
+        return frameInCGEventSpace.contains(point)
     }
 
     /// Re-resolve the display target for this device from config + auto-correlation

@@ -41,6 +41,7 @@ A native macOS app that enables touch input to control your Mac via USB-C alone.
 ### Supported Touchscreens
 
 - **Cisco WebEx Desk Pro** (VendorID: 0x05a6, ProductID: 0x0b05)
+- **Corsair XENEON EDGE** (VendorID: 0x27c0, ProductID: 0x0859; legacy fallback: 0x1b1c/0x1b96)
 
 > ⚠️ **Note**: Touch Redirect uses USB HID to communicate with the touchscreen.
 > Different devices have different HID report formats, so support must be added
@@ -59,7 +60,7 @@ TouchRedirect should work on any Apple Silicon Mac running macOS 14.0+.
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
-- Cisco WebEx Desk Pro connected via USB-C
+- Supported touchscreen connected via USB-C
 - Accessibility permissions
 
 ## Download
@@ -98,12 +99,37 @@ You'll be prompted to grant these permissions on first launch. Go to:
 
 ## Usage
 
-1. Connect your WebEx Desk Pro via USB-C
+1. Connect your supported touchscreen via USB-C
 2. Launch Touch Redirect
 3. The menu bar icon will show connection status:
    - Gray icon = Searching for device
    - Green filled icon = Connected and ready
-4. Touch the screen to control your cursor!
+4. Touch the screen to control your cursor.
+   - Touch is mapped per device to its configured display binding.
+   - First contact on a mapped device immediately targets that display, even if the cursor was on another display.
+
+## Deploy Workflow (Local Production Build)
+
+Use this cycle for local deploys to `/Applications`:
+
+```bash
+# 1) Build
+cd TouchRedirect
+swift build -c release
+
+# 2) Stop running app
+killall TouchRedirect
+
+# 3) Copy binary and metadata into app bundle
+cp .build/release/TouchRedirect /Applications/TouchRedirect.app/Contents/MacOS/TouchRedirect
+cp Sources/TouchRedirect/Info.plist /Applications/TouchRedirect.app/Contents/Info.plist
+
+# 4) Re-sign and relaunch
+codesign --force --deep --sign - /Applications/TouchRedirect.app
+open /Applications/TouchRedirect.app
+```
+
+Note: after re-signing, macOS may require re-granting Accessibility and Input Monitoring permissions.
 
 ## Gestures
 
@@ -248,11 +274,9 @@ If you see "Device is in use by another process":
 
 ### HID Protocol
 
-The app communicates directly with the HID digitizer interface:
-- Usage Page: 0x0D (Digitizer)
-- Report ID: 0x04 (Touch Report)
-- Coordinate Range: X=0-16384, Y=0-8220
-- Max Contacts: 10 simultaneous touches
+The app communicates directly with HID digitizer interfaces and, for supported devices that expose companion mouse interfaces, seizes those companion interfaces to prevent native event conflicts.
+
+Current profiles use device-specific report semantics (e.g., different tip-switch/contact-id bit layouts) resolved by VID/PID profile matching.
 
 ## Contributing
 

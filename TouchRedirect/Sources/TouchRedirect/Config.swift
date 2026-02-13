@@ -381,6 +381,12 @@ class Config {
         return affineTransform
     }
 
+    /// Get affine transform strictly for a specific device — no global fallback.
+    /// Returns nil if this device has never been independently calibrated.
+    func perDeviceAffineTransform(forDevice key: String) -> [String: Double]? {
+        return defaults.dictionary(forKey: "device.\(key).affineTransform") as? [String: Double]
+    }
+
     /// Save affine transform for a specific device
     func setAffineTransform(_ transform: [String: Double]?, forDevice key: String) {
         if let value = transform {

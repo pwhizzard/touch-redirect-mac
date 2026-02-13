@@ -80,7 +80,7 @@ class TouchParser {
     ///   - deviceIdentity: Stable device identity for source tracking
     /// - Returns: Parsed TouchReport tagged with source, or nil
     func parse(data: [UInt8], profile: TouchDeviceProfile, deviceIdentity: TouchDeviceIdentity) -> TouchReport? {
-        guard var report = parseRaw(data: data, maxTouches: profile.maxTouches) else {
+        guard var report = parseRaw(data: data, profile: profile) else {
             return nil
         }
         report.deviceIdentity = deviceIdentity
@@ -91,39 +91,42 @@ class TouchParser {
     // MARK: - Legacy Single-Device Parsing (backward compat)
 
     /// Parse a touch report from raw HID data (legacy path, no source tagging).
+    /// Uses Desk Pro format defaults (tip switch bit 6, contact ID bits 0-5).
     /// - Parameter data: Raw bytes from HID input report (includes Report ID at byte 0)
     /// - Returns: Parsed TouchReport or nil if invalid
     func parse(data: [UInt8]) -> TouchReport? {
-        return parseRaw(data: data, maxTouches: 5)
+        return parseRaw(data: data, profile: .deskPro)
     }
 
     // MARK: - Core Parser
 
-    /// Internal: parse raw touch data enforcing a max touch count.
-    private func parseRaw(data: [UInt8], maxTouches: Int) -> TouchReport? {
+    /// Internal: parse raw touch data using profile-specific format.
+    private func parseRaw(data: [UInt8], profile: TouchDeviceProfile) -> TouchReport? {
         // Minimum size: 1 (report ID) + 5 (touch data) = 6 bytes
         guard data.count >= 6 else {
             return nil
         }
+
+        let tipSwitchMask: UInt8 = 1 << profile.tipSwitchBit
 
         var touches: [TouchPoint] = []
 
         // Touch points are packed at 5-byte intervals starting at offset 1
         let touchSlotSize = 5
         let firstOffset = 1
-        let maxSlots = min(maxTouches, (data.count - firstOffset) / touchSlotSize)
+        let maxSlots = min(profile.maxTouches, (data.count - firstOffset) / touchSlotSize)
 
         for slot in 0..<maxSlots {
             let offset = firstOffset + slot * touchSlotSize
             guard offset + touchSlotSize <= data.count else { break }
 
-            // For slot > 0, check tip switch before parsing to match original Desk Pro behavior
+            // For slot > 0, check tip switch before parsing to skip empty slots
             if slot > 0 {
                 let byte = data[offset]
-                guard (byte & 0x40) != 0 else { continue }
+                guard (byte & tipSwitchMask) != 0 else { continue }
             }
 
-            if let touch = parseTouchPoint(data: data, offset: offset) {
+            if let touch = parseTouchPoint(data: data, offset: offset, profile: profile) {
                 if touch.tipSwitch {
                     touches.append(touch)
                 }
@@ -151,17 +154,17 @@ class TouchParser {
 
     // MARK: - Touch Point Parsing
 
-    /// Parse a single touch point from the data.
-    /// Format: Byte has tip switch in bit 6, contact ID in bits 0-5,
+    /// Parse a single touch point from the data using profile-specific bit layout.
+    /// The first byte contains tip switch and contact ID at profile-defined positions,
     /// followed by X (16-bit LE) and Y (16-bit LE).
-    private func parseTouchPoint(data: [UInt8], offset: Int) -> TouchPoint? {
+    private func parseTouchPoint(data: [UInt8], offset: Int, profile: TouchDeviceProfile) -> TouchPoint? {
         guard offset + 5 <= data.count else {
             return nil
         }
 
         let byte0 = data[offset]
-        let tipSwitch = (byte0 & 0x40) != 0  // Bit 6
-        let contactID = byte0 & 0x3F         // Bits 0-5
+        let tipSwitch = (byte0 & (1 << profile.tipSwitchBit)) != 0
+        let contactID = (byte0 & profile.contactIDMask) >> profile.contactIDShift
 
         // X coordinate: 16-bit little-endian
         let xLow = UInt16(data[offset + 1])

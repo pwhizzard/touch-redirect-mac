@@ -156,6 +156,15 @@ class Injector {
     var isButtonDown: Bool {
         return isMouseDown
     }
+
+    /// Returns current cursor location in CGEvent coordinate space.
+    /// Falls back to the last injected position if current location is unavailable.
+    func currentCursorPosition() -> CGPoint? {
+        if let event = CGEvent(source: nil) {
+            return event.location
+        }
+        return lastPosition
+    }
     
     // MARK: - System Actions
     

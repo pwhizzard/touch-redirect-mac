@@ -54,11 +54,6 @@ class GestureEngine {
     private var pinchZoomTriggered: Bool = false
     private let pinchThreshold: CGFloat = 50 // Pixel change to trigger zoom
 
-    // Gesture stabilization - prevents spurious mouse events when fingers are still landing
-    private var gestureStabilizationTime: Date?
-    private let gestureStabilizationDelay: TimeInterval = 0.05 // 50ms to wait for more fingers
-    private var pendingSingleTouchPosition: CGPoint?
-
     // MARK: - Active Device Arbitration
 
     /// The identity of the device currently controlling the pointer (nil = none active)
@@ -227,7 +222,7 @@ class GestureEngine {
         case 0:
             handleNoTouches()
         case 1:
-            handleSingleTouch()
+            handleSingleTouch(activeMapper: activeMapper)
         case 2:
             handleTwoFingerGesture()
         case 3:
@@ -243,10 +238,6 @@ class GestureEngine {
     }
     
     private func handleNoTouches() {
-        // Reset stabilization
-        gestureStabilizationTime = nil
-        pendingSingleTouchPosition = nil
-
         // Release active device claim (auto mode: first-touch-wins resets here)
         if activeDeviceIdentity != nil {
             log("Device arbitration: releasing active control (\(activeDeviceIdentity!))")
@@ -290,7 +281,7 @@ class GestureEngine {
     
     private var lastLogTime: Date = Date.distantPast
     
-    private func handleSingleTouch() {
+    private func handleSingleTouch(activeMapper: Mapper) {
         guard let (_, touch) = activeTouches.first else { return }
         
         // If we were in a three-finger gesture, don't start a single touch drag
@@ -303,24 +294,15 @@ class GestureEngine {
         lastSingleTouchPosition = touch.currentPosition
         
         if gestureState != .singleTouch {
-            // Wait briefly before committing to single touch (allow multi-touch to land)
-            if gestureStabilizationTime == nil {
-                gestureStabilizationTime = Date()
-                pendingSingleTouchPosition = touch.currentPosition
-                return // Wait for stabilization
+            // Direct-touch semantics: first contact immediately acts on the touched
+            // display. Only pre-move the cursor when it's currently off the target.
+            if let cursorPoint = injector.currentCursorPosition(),
+               !activeMapper.isPointOnTargetDisplay(cursorPoint) {
+                injector.moveCursor(to: touch.currentPosition)
             }
-            
-            if Date().timeIntervalSince(gestureStabilizationTime!) < gestureStabilizationDelay {
-                // Still stabilizing - update position but don't commit
-                pendingSingleTouchPosition = touch.currentPosition
-                return
-            }
-            
-            // Stabilization complete - commit to single touch
+
             log("Single touch START at (\(Int(touch.currentPosition.x)), \(Int(touch.currentPosition.y)))")
             gestureState = .singleTouch
-            gestureStabilizationTime = nil
-            pendingSingleTouchPosition = nil
             injector.mouseDown(at: touch.currentPosition)
         } else {
             // Continue dragging - log occasionally
@@ -335,10 +317,6 @@ class GestureEngine {
     private func handleTwoFingerGesture() {
         let touches = Array(activeTouches.values)
         guard touches.count == 2 else { return }
-        
-        // Cancel any pending single-touch (more fingers landed)
-        gestureStabilizationTime = nil
-        pendingSingleTouchPosition = nil
         
         // If we were in a three-finger gesture, don't overwrite it
         // (allows for momentary finger lift during swipe)
@@ -442,10 +420,6 @@ class GestureEngine {
         
         let touches = Array(activeTouches.values)
         guard touches.count >= 3 else { return }
-        
-        // Cancel any pending single-touch (more fingers landed)
-        gestureStabilizationTime = nil
-        pendingSingleTouchPosition = nil
         
         // Calculate center of all touches (use first 3)
         let touchesToUse = Array(touches.prefix(3))

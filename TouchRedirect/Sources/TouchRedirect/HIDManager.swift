@@ -51,8 +51,18 @@ class HIDManager {
     /// Registry of all currently connected touch devices, keyed by stable identity
     private(set) var connectedDevices: [TouchDeviceIdentity: ConnectedTouchDevice] = [:]
 
-    /// Report buffers keyed by device identity (must stay allocated while device is connected)
-    private var reportBuffers: [TouchDeviceIdentity: UnsafeMutablePointer<UInt8>] = [:]
+    /// Report buffers keyed by device identity (must stay allocated while device is connected).
+    /// Array-per-identity because devices like the Xeneon expose multiple HID interfaces that
+    /// each need their own callback buffer.
+    private var reportBuffers: [TouchDeviceIdentity: [UnsafeMutablePointer<UInt8>]] = [:]
+
+    /// Maps every registered IOHIDDevice interface reference to its owning TouchDeviceIdentity.
+    /// This is the authoritative lookup for incoming HID reports — allows reports from any
+    /// interface (primary, additional digitizer, companion Mouse) to be attributed correctly.
+    private var interfaceToIdentity: [IOHIDDevice: TouchDeviceIdentity] = [:]
+
+    /// Tracks all IOHIDDevice interface references belonging to each identity, for cleanup.
+    private var identityInterfaces: [TouchDeviceIdentity: [IOHIDDevice]] = [:]
 
     // Parsed touch report callback (source-aware: report now carries deviceIdentity + profileID)
     var onTouchReport: ((_ report: TouchReport) -> Void)?
@@ -176,14 +186,23 @@ class HIDManager {
         logError("Usage:        0x\(String(usage, radix: 16)) (\(usageName(usage)))")
         logError("LocationID:   0x\(String(locationID, radix: 16))")
 
-        // Only accept touch screen interfaces
-        guard TouchDeviceProfileResolver.isTouchDigitizer(usagePage: usagePage, usage: usage) else {
-            logError("  Not a touch interface (wrong UsagePage/Usage) — skipping")
+        // Accept touch screen interfaces and companion interfaces (e.g. Mouse on Xeneon)
+        let isDigitizer = TouchDeviceProfileResolver.isTouchDigitizer(usagePage: usagePage, usage: usage)
+        let isCompanion = TouchDeviceProfileResolver.isCompanionInterface(
+            usagePage: usagePage, usage: usage, vendorID: vendorID, productID: productID
+        )
+
+        guard isDigitizer || isCompanion else {
+            logError("  Not a touch or companion interface — skipping")
             logError("═══════════════════════════")
             return
         }
 
-        logError("  This IS a touch screen interface!")
+        if isDigitizer {
+            logError("  This IS a touch screen interface!")
+        } else {
+            logError("  This is a companion Mouse interface for a known touch device — seizing to take full control")
+        }
 
         // Resolve profile
         let profile = TouchDeviceProfileResolver.resolve(
@@ -201,13 +220,6 @@ class HIDManager {
             locationID: locationID
         )
 
-        // Skip if already registered (can happen with hot-replug race)
-        guard connectedDevices[identity] == nil else {
-            logError("  Device already registered — skipping duplicate")
-            logError("═══════════════════════════")
-            return
-        }
-
         // Open the device
         let openResult = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
         if openResult == kIOReturnSuccess {
@@ -224,7 +236,17 @@ class HIDManager {
             }
         }
 
-        // Register in device registry
+        // Some devices (e.g. Corsair XENEON EDGE) expose multiple HID interfaces
+        // with the same VID/PID/LocationID. Register input report callbacks for ALL
+        // matching touch interfaces so we catch the one that actually sends data.
+        if connectedDevices[identity] != nil {
+            logError("  Additional interface for already-registered device — registering input callback")
+            registerInputReportCallback(device, identity: identity, profile: profile)
+            logError("═══════════════════════════")
+            return
+        }
+
+        // Register in device registry (first interface for this identity)
         let entry = ConnectedTouchDevice(
             device: device,
             identity: identity,
@@ -249,25 +271,29 @@ class HIDManager {
     // MARK: - Device Disconnection
 
     private func deviceDisconnected(_ device: IOHIDDevice) {
-        // Find and remove the device from registry by matching the IOHIDDevice reference
-        var removedIdentity: TouchDeviceIdentity?
-        for (identity, entry) in connectedDevices {
-            if entry.device === device {
-                removedIdentity = identity
-                break
-            }
+        // Resolve identity from the interface map (works for any interface, not just primary)
+        guard let identity = interfaceToIdentity.removeValue(forKey: device) else {
+            logError("Unknown interface disconnected — not in interface map")
+            return
         }
 
-        if let identity = removedIdentity {
-            let entry = connectedDevices.removeValue(forKey: identity)
-            log("Device disconnected: \(entry?.profile.displayName ?? "Unknown") (\(identity))")
+        // Remove this interface from the identity's interface list
+        identityInterfaces[identity]?.removeAll { $0 === device }
+        let remainingInterfaces = identityInterfaces[identity]?.count ?? 0
+        logError("Interface disconnected for \(connectedDevices[identity]?.profile.displayName ?? "?") (\(identity)), \(remainingInterfaces) interface(s) remaining")
 
-            // Free the report buffer
-            if let buffer = reportBuffers.removeValue(forKey: identity) {
-                buffer.deallocate()
+        // Only remove the full device entry when ALL its interfaces have disconnected
+        if remainingInterfaces == 0 {
+            identityInterfaces.removeValue(forKey: identity)
+            let entry = connectedDevices.removeValue(forKey: identity)
+            logError("All interfaces gone — removing device: \(entry?.profile.displayName ?? "Unknown") (\(identity))")
+
+            // Free all report buffers for this device identity
+            if let buffers = reportBuffers.removeValue(forKey: identity) {
+                for buffer in buffers {
+                    buffer.deallocate()
+                }
             }
-        } else {
-            log("Unknown device disconnected")
         }
 
         let stillConnected = !connectedDevices.isEmpty
@@ -298,9 +324,15 @@ class HIDManager {
     // MARK: - Input Report Handling
 
     private func registerInputReportCallback(_ device: IOHIDDevice, identity: TouchDeviceIdentity, profile: TouchDeviceProfile) {
+        // Register interface ownership BEFORE wiring the callback so that
+        // the very first report can be resolved to the correct identity.
+        interfaceToIdentity[device] = identity
+        identityInterfaces[identity, default: []].append(device)
+
         let reportSize = max(64, profile.expectedReportSize)
         let reportBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: reportSize)
-        reportBuffers[identity] = reportBuffer
+        // Append to the array — each HID interface gets its own buffer
+        reportBuffers[identity, default: []].append(reportBuffer)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -321,13 +353,22 @@ class HIDManager {
             selfPtr
         )
 
-        log("Input report callback registered for \(profile.displayName) (\(identity))")
+        log("Input report callback registered for \(profile.displayName) (\(identity)) [interfaces: \(identityInterfaces[identity]?.count ?? 0)]")
     }
 
+    /// Counter for dropped reports (unknown sender) — should always be zero after fix.
+    private var droppedReportCount: Int = 0
+
     private func handleInputReport(reportID: UInt32, data: [UInt8], senderDevice: IOHIDDevice) {
-        // Look up device in registry
-        guard let (identity, entry) = findEntry(for: senderDevice) else {
-            return  // Unknown device, ignore
+        // Resolve identity via the interface map (works for ALL registered interfaces:
+        // primary, additional digitizer, companion Mouse, etc.)
+        guard let identity = interfaceToIdentity[senderDevice],
+              let entry = connectedDevices[identity] else {
+            droppedReportCount += 1
+            if droppedReportCount <= 5 || droppedReportCount % 100 == 0 {
+                logError("⚠️ Dropped HID report #\(droppedReportCount) from unknown sender interface")
+            }
+            return
         }
 
         // Increment report count for diagnostics (read-modify-write for value type)
@@ -336,7 +377,7 @@ class HIDManager {
         connectedDevices[identity] = updatedEntry
         let count = updatedEntry.reportCount
 
-        // Log first few reports and then periodically
+        // Log first few reports and then periodically (debug builds)
         if count <= 5 || count % 100 == 0 {
             log("HID Report #\(count) [\(entry.profile.displayName)]: ID=0x\(String(reportID, radix: 16)), \(data.count) bytes: \(data.prefix(10).map { String(format: "%02X", $0) }.joined(separator: " "))")
         }
@@ -351,22 +392,16 @@ class HIDManager {
         }
     }
 
-    /// Find connected device entry matching an IOHIDDevice reference
-    private func findEntry(for device: IOHIDDevice) -> (TouchDeviceIdentity, ConnectedTouchDevice)? {
-        for (identity, entry) in connectedDevices {
-            if entry.device === device {
-                return (identity, entry)
+    deinit {
+        // Free all report buffers (array-per-identity)
+        for (_, buffers) in reportBuffers {
+            for buffer in buffers {
+                buffer.deallocate()
             }
         }
-        return nil
-    }
-
-    deinit {
-        // Free all report buffers
-        for (_, buffer) in reportBuffers {
-            buffer.deallocate()
-        }
         reportBuffers.removeAll()
+        interfaceToIdentity.removeAll()
+        identityInterfaces.removeAll()
 
         if manager != nil {
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))

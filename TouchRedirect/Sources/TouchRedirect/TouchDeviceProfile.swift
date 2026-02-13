@@ -77,6 +77,19 @@ struct TouchDeviceProfile {
 
     /// Screen name keywords for auto-detect heuristic
     let screenNameKeywords: [String]
+
+    // --- Report parsing format ---
+
+    /// Bit position of the Tip Switch flag within the first byte of each touch slot.
+    /// Desk Pro uses bit 6 (0x40), Xeneon uses bit 0 (0x01).
+    let tipSwitchBit: Int
+
+    /// Bitmask to extract the Contact ID from the first byte of each touch slot.
+    /// Desk Pro: 0x3F (bits 0-5), Xeneon: 0xFC (bits 2-7) then shift right by contactIDShift.
+    let contactIDMask: UInt8
+
+    /// Right-shift amount for extracting Contact ID after applying mask.
+    let contactIDShift: Int
 }
 
 // MARK: - Known Profiles
@@ -97,14 +110,17 @@ extension TouchDeviceProfile {
         defaultMaxY: 9525.0,
         touchReportIDs: [0x04],
         defaultEdgeCompensation: true,
-        screenNameKeywords: ["DESKPRO", "CISCO", "WEBEX"]
+        screenNameKeywords: ["DESKPRO", "CISCO", "WEBEX"],
+        tipSwitchBit: 6,        // Tip Switch at bit 6 of first touch byte
+        contactIDMask: 0x3F,    // Contact ID in bits 0-5
+        contactIDShift: 0
     )
 
     /// Corsair XENEON EDGE touch monitor
     static let xeneonEdge = TouchDeviceProfile(
         id: .xeneonEdge,
         displayName: "Corsair XENEON EDGE",
-        vendorProductPairs: [(vendorID: 0x1B1C, productID: 0x1B96)],
+        vendorProductPairs: [(vendorID: 0x27C0, productID: 0x0859), (vendorID: 0x1B1C, productID: 0x1B96)],
         nameKeywords: ["CORSAIR", "XENEON", "XENEON EDGE"],
         maxTouches: 5,
         expectedReportSize: 0,  // Accept any until confirmed from hardware capture
@@ -114,7 +130,10 @@ extension TouchDeviceProfile {
         defaultMaxY: 16384.0,
         touchReportIDs: [],  // Accept any report ID until confirmed from hardware capture
         defaultEdgeCompensation: false,
-        screenNameKeywords: ["XENEON", "CORSAIR"]
+        screenNameKeywords: ["XENEON", "CORSAIR"],
+        tipSwitchBit: 0,        // Tip Switch at bit 0 (standard HID digitizer layout)
+        contactIDMask: 0xFC,    // Contact ID in bits 2-7
+        contactIDShift: 2
     )
 
     /// Fallback profile for unrecognised touch digitisers
@@ -131,7 +150,10 @@ extension TouchDeviceProfile {
         defaultMaxY: 16384.0,
         touchReportIDs: [],  // Accept any report ID
         defaultEdgeCompensation: false,
-        screenNameKeywords: []
+        screenNameKeywords: [],
+        tipSwitchBit: 6,        // Default to Desk Pro layout for unknown devices
+        contactIDMask: 0x3F,
+        contactIDShift: 0
     )
 
     /// All known profiles in priority order (most specific first)
@@ -185,6 +207,26 @@ struct TouchDeviceProfileResolver {
     /// Check whether a given HID interface is a touch digitiser
     static func isTouchDigitizer(usagePage: Int, usage: Int) -> Bool {
         return usagePage == 0x0D && usage == 0x04  // Digitizer / Touch Screen
+    }
+
+    /// Check whether a non-digitizer HID interface is a companion to a known touch device.
+    /// Some touch devices (e.g. Corsair XENEON EDGE) expose a Mouse interface that macOS
+    /// handles natively for single-touch cursor movement. We need to seize these to take
+    /// full control. Only returns true for Mouse interfaces whose VID/PID matches a known
+    /// touch device profile -- never seizes unrelated mice, trackpads, etc.
+    static func isCompanionInterface(usagePage: Int, usage: Int, vendorID: Int, productID: Int) -> Bool {
+        // Only consider Generic Desktop / Mouse interfaces
+        guard usagePage == 0x01 && usage == 0x02 else { return false }
+
+        // Only match if VID/PID belongs to a known touch device
+        for profile in TouchDeviceProfile.allKnown {
+            for pair in profile.vendorProductPairs {
+                if pair.vendorID == vendorID && pair.productID == productID {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 
