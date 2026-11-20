@@ -556,10 +556,7 @@ struct DiagnosticsSettingsView: View {
     }
     
     private func checkInputMonitoringPermission() -> Bool {
-        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        guard let hidManager = manager else {
-            return false
-        }
+        let hidManager: IOHIDManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         
         let openResult = IOHIDManagerOpen(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
         let hasAccess = (openResult == kIOReturnSuccess)

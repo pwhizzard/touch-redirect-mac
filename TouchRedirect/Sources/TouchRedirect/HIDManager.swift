@@ -153,6 +153,8 @@ class HIDManager {
             }
             
             currentDevice = device
+            touchReportIDs = detectTouchReportIDs(device)
+            logError("Touch report ID(s): \(touchReportIDs.sorted().map { "0x" + String($0, radix: 16) })")
             appDelegate?.updateStatus(connected: true)
             registerInputReportCallback(device)
             ScreenManager.shared.refreshTargetScreen(reason: "touch device connected")
@@ -199,6 +201,26 @@ class HIDManager {
     }
     
     private var reportCount = 0
+
+    /// Report IDs that carry touch contact data. Detected from the device's
+    /// report descriptor on connect; defaults cover known Desk Pro firmwares.
+    private var touchReportIDs: Set<UInt32> = [0x01, 0x04]
+
+    /// Find the input report ID(s) containing Digitizer Contact Identifier (0x0D/0x51) elements.
+    private func detectTouchReportIDs(_ device: IOHIDDevice) -> Set<UInt32> {
+        let fallback: Set<UInt32> = [0x01, 0x04]
+        guard let elements = IOHIDDeviceCopyMatchingElements(device, nil, IOOptionBits(kIOHIDOptionsTypeNone)) as? [IOHIDElement] else {
+            return fallback
+        }
+        var ids = Set<UInt32>()
+        for element in elements
+        where IOHIDElementGetUsagePage(element) == 0x0D
+            && IOHIDElementGetUsage(element) == 0x51
+            && IOHIDElementGetType(element).rawValue <= kIOHIDElementTypeInput_ScanCodes.rawValue {
+            ids.insert(IOHIDElementGetReportID(element))
+        }
+        return ids.isEmpty ? fallback : ids
+    }
     
     private func handleInputReport(reportID: UInt32, data: [UInt8]) {
         reportCount += 1
@@ -208,8 +230,9 @@ class HIDManager {
             log("HID Report #\(reportCount): ID=0x\(String(reportID, radix: 16)), \(data.count) bytes: \(data.prefix(10).map { String(format: "%02X", $0) }.joined(separator: " "))")
         }
         
-        // Report ID 0x04 is touch data
-        if reportID == 0x04 {
+        // Only parse the report that carries finger (contact) data.
+        // Older Desk Pro firmware used Report ID 0x04; newer RoomOS firmware uses 0x01.
+        if touchReportIDs.contains(reportID) {
             if let report = touchParser.parse(data: data) {
                 onTouchReport?(report)
             }

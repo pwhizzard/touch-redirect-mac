@@ -9,7 +9,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "TouchRedirect",
-            path: "Sources/TouchRedirect"
+            path: "Sources/TouchRedirect",
+            // Icons are packaged by Scripts/build-app.sh; excluding them lets the
+            // package build with Command Line Tools only (no actool/Xcode needed).
+            exclude: ["Resources", "Info.plist"]
         )
     ]
 )
