@@ -248,10 +248,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func checkInputMonitoringPermission() -> Bool {
         // Check IOHIDManager access (requires Input Monitoring on macOS 10.15+)
-        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        guard let hidManager = manager else {
-            return false
-        }
+        let hidManager: IOHIDManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         
         let openResult = IOHIDManagerOpen(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
         let hasAccess = (openResult == kIOReturnSuccess)
